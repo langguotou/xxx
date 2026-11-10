@@ -16,12 +16,9 @@ Python 爱心弹窗 · 心之所向 爱之所往
 随时退出：Esc / 空格 / 单击任意卡片 / 控制台 Ctrl+C（退出时音乐也会停）
 
 BGM：
-    把你的音频文件放进本文件夹（推荐命名为 bgm.mp3），
-    运行时会自动识别并循环播放；文件名含 bgm / song / 情歌 会优先选中。
-    支持 mp3 / wav / m4a / flac / ogg / aac / wma（Windows 由系统 MCI 解码）。
-    没放自己的歌时，播放内置的原创八音盒循环 bgm.wav。
+    只播放同目录的 bgm.mp3，循环播放，没有其它备选或兜底音乐。
+    文件不存在时静音运行（弹窗照常显示）。
     查看当前会播哪首：python heart_popup.py --which-bgm
-    重建内置音乐：python heart_popup.py --make-bgm
     不想放音乐：把下面 CONFIG 里的 ENABLE_BGM 改成 False。
 
 想改内容：编辑 CONFIG 区的 TIPS、COLORS、弹窗速度等参数。
@@ -94,12 +91,7 @@ FINALE_W, FINALE_H = 560, 380   # 中央大爱心卡片尺寸
 TRANSPARENT_BG = "#010203"      # 用于抠出圆角的透明色（Windows 支持）
 
 ENABLE_BGM = True               # 关掉音乐改成 False
-BGM_FILE = "bgm.wav"            # 内置的原创八音盒（没放自己的歌时才用它）
-BGM_BPM = 84                    # 原创八音盒旋律速度
-
-# 放自己的歌进本文件夹即可自动播放，文件名带这些词会优先选中
-AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma")
-BGM_KEYWORDS = ("bgm", "song", "music", "情歌")
+BGM_FILE = "bgm.mp3"            # 唯一使用的音频文件；不存在则静音
 # ============================================================
 
 
@@ -125,29 +117,9 @@ def bgm_path():
 
 
 def find_bgm():
-    """选曲：优先文件名含 BGM_KEYWORDS 的音频，其次任何你放进来的音频，最后用内置八音盒。
-
-    返回 (音频文件绝对路径, 是否为用户自己的歌曲)
-    """
-    try:
-        names = [n for n in os.listdir(BASE_DIR)
-                 if os.path.isfile(os.path.join(BASE_DIR, n))
-                 and n.lower().endswith(AUDIO_EXTS)]
-    except OSError:
-        names = []
-    custom = [n for n in names if n != BGM_FILE]
-    for n in custom:
-        if any(k in n for k in BGM_KEYWORDS):
-            return os.path.join(BASE_DIR, n), True
-    if custom:
-        # 有多个自定义音频时，用最近放进来那个
-        custom.sort(key=lambda n: os.path.getmtime(os.path.join(BASE_DIR, n)),
-                    reverse=True)
-        return os.path.join(BASE_DIR, custom[0]), True
+    """只用这一个音频文件；找不到返回 None（静音运行）"""
     path = bgm_path()
-    if not os.path.exists(path):
-        make_bgm(path)
-    return path, False
+    return path if os.path.exists(path) else None
 
 
 def make_bgm(path=None):
@@ -233,15 +205,15 @@ class BgmPlayer:
         if not ENABLE_BGM:
             return
         try:
-            path, custom = find_bgm()
+            path = find_bgm()
         except Exception as exc:
             print("BGM 准备失败（不影响弹窗）：", exc)
             return
+        if not path:
+            print("未找到 %s，本次静音运行（弹窗照常显示）。" % BGM_FILE)
+            return
         self.track = os.path.basename(path)
-        print("BGM：%s（%s）" % (
-            self.track,
-            "你放入的歌曲" if custom else "内置八音盒；放入自己的音频文件即可替换",
-        ))
+        print("BGM：%s（唯一音源）" % self.track)
 
         ext = os.path.splitext(path)[1].lower()
 
@@ -671,16 +643,13 @@ def selftest():
     assert all(0 <= x <= 800 - WIN_W and 0 <= y <= 600 - WIN_H for x, y in small), \
         "小屏幕心形弹窗坐标越界"
     assert MAX_WINDOWS > HEART_COUNT, "窗口上限必须大于心形弹窗数"
-    path = bgm_path()
-    if os.path.exists(path):
-        with wave.open(path, "rb") as f:
-            assert f.getnchannels() >= 1 and f.getframerate() > 0
-            seconds = f.getnframes() / f.getframerate()
-        print("BGM 文件合法：%s（%.1f 秒）"
-              % (os.path.basename(path), seconds))
-    path, custom = find_bgm()
-    assert os.path.exists(path) and path.lower().endswith(AUDIO_EXTS), "选曲结果不是音频文件"
-    print("选曲：%s（%s）" % (os.path.basename(path), "自定义歌曲" if custom else "内置八音盒"))
+    path = find_bgm()
+    if path:
+        assert os.path.isfile(path) and os.path.getsize(path) > 0, "BGM 文件无效"
+        print("选曲：%s（%.1f MB）" % (os.path.basename(path),
+                                     os.path.getsize(path) / 1024 / 1024))
+    else:
+        print("未找到 %s，将静音运行" % BGM_FILE)
     print("自检通过：心形 %d 个 / 位置池 %d 个 / 上限 %d 个窗口，坐标均未越界。"
           % (len(pts), len(grid), MAX_WINDOWS))
 
@@ -689,14 +658,11 @@ if __name__ == "__main__":
     if "--test" in sys.argv:
         selftest()
     elif "--which-bgm" in sys.argv:
-        p, custom = find_bgm()
-        print("当前 BGM：", p)
-        print("来源：", "你放入的音频文件" if custom else "内置原创八音盒")
-        if not custom:
-            print("把自己的歌曲（推荐命名为 bgm.mp3）放进同目录即可自动替换。")
-    elif "--make-bgm" in sys.argv:
-        p = make_bgm()
-        print("已生成默认 BGM：", p)
+        p = find_bgm()
+        if p:
+            print("当前 BGM（唯一）：", p)
+        else:
+            print("未找到 %s，会静音运行。把它放进同目录即可。" % BGM_FILE)
     elif tk is None:
         # 没装 tkinter 也能看到同款效果：直接用浏览器打开网页版
         import webbrowser

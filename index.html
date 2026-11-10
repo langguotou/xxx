@@ -57,6 +57,21 @@
     position: fixed; bottom: 12px; left: 0; right: 0; z-index: 60;
     text-align: center; font-size: 11px; color: #b06a85; letter-spacing: .5px;
   }
+  .music-gate {
+    position: fixed; left: 50%; bottom: 54px; transform: translateX(-50%);
+    z-index: 70; cursor: pointer; white-space: nowrap;
+    padding: 14px 28px; border: 2px solid #ffb6cd; border-radius: 30px;
+    background: #fff0f5; color: var(--deep);
+    font: 15px/1.2 "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 700;
+    box-shadow: 0 8px 24px rgba(193,80,120,.22);
+    animation: gatePulse 1.8s ease-in-out infinite;
+  }
+  .music-gate:hover { background: #ffe1ea; }
+  .music-gate:disabled { opacity: .6; cursor: default; animation: none; }
+  @keyframes gatePulse {
+    0%, 100% { box-shadow: 0 8px 24px rgba(193,80,120,.22); }
+    50% { box-shadow: 0 8px 30px rgba(216,27,96,.45); }
+  }
   #finale { position: fixed; inset: 0; z-index: 20; display: flex;
             align-items: center; justify-content: center; pointer-events: none; }
   .finale-card {
@@ -91,7 +106,7 @@
 <div id="stage"></div>
 <div id="finale"></div>
 <div class="hud">
-  <span class="status" id="track">BGM：内置八音盒</span>
+  <span class="status" id="track">BGM：bgm.mp3</span>
   <span class="status" id="status">准备中…</span>
   <button id="music">音乐：开</button>
   <button id="song">换歌</button>
@@ -99,7 +114,8 @@
   <button id="stop">结束</button>
   <input type="file" id="songFile" accept="audio/*" hidden>
 </div>
-<div class="tip">不自动关闭 · 按 Esc / 空格结束 · 按 R 重播 · 点任意卡片也能结束 · 「换歌」可选本地音频（如 bgm.mp3）</div>
+<button id="startBtn" class="music-gate">♥ 点一下开启音乐</button>
+<div class="tip">打开后点一下开启音乐 · 按 Esc / 空格结束 · 按 R 重播 · 点任意卡片也能结束 · 「换歌」可选本地音频</div>
 
 <script>
 const TIPS = [
@@ -118,7 +134,7 @@ const COLORS = [
   ["#E6F4FF", "#1565C0"], ["#FFE9F0", "#AD1457"], ["#FCE4EC", "#880E4F"]
 ];
 
-// 内置兜底：原创八音盒旋律（放入自己的歌后就不播它了）
+// 保留的音频工具常量（当前不启用，BGM 只播放 bgm.mp3）
 const BARS = [
   [[48,52,55], [[76,1],[74,1],[72,1],[74,1]]],
   [[45,48,52], [[72,1],[69,1],[67,1],[69,1]]],
@@ -296,20 +312,8 @@ function scheduleMusic() {
 }
 
 function startMusic() {
-  if (!musicOn) return;
-  if (audioEl && audioEl.src) {           // 已选了本地歌曲，优先播它
-    audioEl.play().catch(() => {});
-    return;
-  }
-  initAudio();
-  if (!actx) return;
-  actx.resume().then(() => {
-    if (actx.state === "running" && musicOn && !musicLoopActive) {
-      musicLoopActive = true;
-      master.gain.setTargetAtTime(0.55, actx.currentTime, 0.05);
-      scheduleMusic();
-    }
-  }).catch(() => {});
+  if (!musicOn || !audioEl) return;
+  audioEl.play().catch(() => {});
 }
 
 function stopMusic() {
@@ -422,33 +426,47 @@ document.getElementById("songFile").addEventListener("change", e => {
   if (e.target.files && e.target.files[0]) useLocalSong(e.target.files[0]);
 });
 finale.addEventListener("click", e => { if (e.target.closest(".finale-card")) stop(); });
-document.addEventListener("pointerdown", startMusic);
-document.addEventListener("keydown", e => {
+const startBtn = document.getElementById("startBtn");
+function dismissGate() {
+  if (startBtn && !startBtn.disabled) startBtn.style.display = "none";
+}
+function unlockAudio() {
+  dismissGate();
   startMusic();
+}
+startBtn.addEventListener("click", unlockAudio);
+document.addEventListener("pointerdown", unlockAudio);
+document.addEventListener("keydown", e => {
+  unlockAudio();
   if (e.key === "Escape" || e.key === " " || e.key === "Spacebar" || e.code === "Space") {
     e.preventDefault(); stop();
   }
   if (e.key === "r" || e.key === "R") play();
 });
 
-// 同目录若有 bgm.mp3 就自动用作 BGM；没有就继续用内置八音盒
+// 只使用同目录的 bgm.mp3；找不到就静音，不回退任何其它音乐
+const BGM_FILE = "bgm.mp3";
 function tryLocalBgm() {
-  const LOCAL_BGM = "bgm.mp3";
   const a = new Audio();
   a.loop = true;
   a.volume = 0.85;
   a.preload = "auto";
   a.addEventListener("canplay", () => {
-    if (audioEl && audioEl.src) return;   // 用户已手动选过歌，不覆盖
-    stopMusic();                          // 停掉内置八音盒
+    if (audioEl) return;
     audioEl = a;
-    trackEl.textContent = "BGM：" + LOCAL_BGM;
-    if (musicOn) a.play().catch(() => {});
+    trackEl.textContent = "BGM：" + BGM_FILE;
+    if (musicOn) a.play().catch(() => {
+      if (startBtn) startBtn.style.display = "";
+    });
   }, { once: true });
   a.addEventListener("error", () => {
-    if (audioEl === a) audioEl = null;
+    trackEl.textContent = "BGM：未找到 " + BGM_FILE;
+    if (startBtn) {
+      startBtn.textContent = "未找到 " + BGM_FILE;
+      startBtn.disabled = true;
+    }
   }, { once: true });
-  a.src = LOCAL_BGM;
+  a.src = BGM_FILE;
   a.load();
 }
 

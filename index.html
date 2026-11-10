@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>心之所向 · 爱之所往 | 爱心弹窗</title>
+<style>
+  :root { --deep: #c2185b; --ink: #8a4059; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    background: radial-gradient(circle at 18% 12%, #fff8fb 0%, #ffeaf2 46%, #ffd6e5 100%);
+    color: var(--ink);
+  }
+  .bg-heart {
+    position: fixed; bottom: -40px; color: #ff9ec0; opacity: 0;
+    pointer-events: none; z-index: 0;
+    animation: float linear infinite;
+  }
+  @keyframes float {
+    0%   { transform: translateY(0) rotate(0deg); opacity: 0; }
+    12%  { opacity: .45; }
+    88%  { opacity: .45; }
+    100% { transform: translateY(-115vh) rotate(25deg); opacity: 0; }
+  }
+  #stage { position: fixed; inset: 0; z-index: 2; }
+  .card {
+    position: absolute; display: flex; align-items: center; justify-content: center;
+    border: 2px solid rgba(255,255,255,.92); border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(193,80,120,.20), inset 0 1px 0 rgba(255,255,255,.7);
+    font-weight: 700; letter-spacing: .5px; white-space: nowrap;
+    opacity: 0; transform: scale(.55) rotate(var(--rot));
+    transition: opacity .26s ease, transform .34s cubic-bezier(.2,1.5,.5,1);
+    cursor: pointer; user-select: none;
+  }
+  .card.in  { opacity: 1; transform: scale(1) rotate(var(--rot)); }
+  .card.out { opacity: 0; transform: scale(.72) rotate(var(--rot)); }
+  .card .dot { position: absolute; right: 12px; font-size: 11px; color: #f48fb1; }
+  .hud {
+    position: fixed; top: 14px; right: 16px; z-index: 60;
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    justify-content: flex-end; max-width: 96vw;
+  }
+  .status {
+    font-size: 12px; color: var(--deep); background: rgba(255,255,255,.72);
+    border: 1px solid rgba(255,182,205,.8); border-radius: 20px;
+    padding: 6px 12px; backdrop-filter: blur(6px);
+  }
+  .hud button {
+    font: 12px/1 inherit; color: var(--deep); cursor: pointer;
+    background: rgba(255,255,255,.85); border: 1px solid #ffb6cd;
+    border-radius: 20px; padding: 7px 13px;
+  }
+  .hud button:hover { background: #fff0f5; }
+  .tip {
+    position: fixed; bottom: 12px; left: 0; right: 0; z-index: 60;
+    text-align: center; font-size: 11px; color: #b06a85; letter-spacing: .5px;
+  }
+  #finale { position: fixed; inset: 0; z-index: 20; display: flex;
+            align-items: center; justify-content: center; pointer-events: none; }
+  .finale-card {
+    pointer-events: auto; cursor: pointer;
+    width: min(560px, 92vw); padding: 18px 20px 22px; text-align: center;
+    background: #fff5f8; border: 2px solid #ffc1d3; border-radius: 30px;
+    box-shadow: 0 20px 60px rgba(193,80,120,.22), 0 0 0 8px rgba(255,255,255,.45);
+    animation: rise .6s cubic-bezier(.2,1.3,.4,1) both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(26px) scale(.92); }
+                    to   { opacity: 1; transform: none; } }
+  .finale-head { color: #d81b60; font-size: 13px; letter-spacing: 2px; }
+  .heart-wrap { position: relative; width: min(300px, 70vw); height: min(280px, 65vw);
+                margin: 4px auto 0; animation: beat 1.3s ease-in-out infinite; }
+  @keyframes beat {
+    0%, 100% { transform: scale(1); }
+    14% { transform: scale(1.055); }
+    28% { transform: scale(.99); }
+    42% { transform: scale(1.035); }
+  }
+  .heart-wrap svg { width: 100%; height: 100%; display: block; }
+  .finale-text {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+    color: #fff; font-size: clamp(20px, 5vw, 28px); font-weight: 800;
+    text-shadow: 0 2px 8px rgba(190,40,90,.35); letter-spacing: 4px;
+  }
+  .finale-sign { color: var(--deep); font-size: 12px; letter-spacing: 2px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="finale"></div>
+<div class="hud">
+  <span class="status" id="track">BGM：内置八音盒</span>
+  <span class="status" id="status">准备中…</span>
+  <button id="music">音乐：开</button>
+  <button id="song">换歌</button>
+  <button id="replay">重播</button>
+  <button id="stop">结束</button>
+  <input type="file" id="songFile" accept="audio/*" hidden>
+</div>
+<div class="tip">不自动关闭 · 按 Esc / 空格结束 · 按 R 重播 · 点任意卡片也能结束 · 「换歌」可选本地音频（如 bgm.mp3）</div>
+
+<script>
+const TIPS = [
+  "多喝热水", "好好吃饭", "别熬夜啦", "天冷加衣",
+  "保持好心情", "我想你了", "顺顺利利", "今天也要开心",
+  "遇见你真好", "余生请多指教", "愿你被温柔以待", "慢慢来我等你",
+  "想和你碎碎念", "一起看日落吧", "你是我的偏爱", "万事胜意",
+  "平安喜乐", "早点睡", "记得想我", "抱一下",
+  "喜欢你不止今天", "岁岁年年", "你笑起来真好看", "别怕我在",
+  "把温柔都给你", "余光是你", "心之所向", "爱之所往",
+  "有你在真好", "要一直开心", "想见你一面", "喜欢就留下来"
+];
+const COLORS = [
+  ["#FFE1EA", "#C2185B"], ["#FFF0F5", "#AD1457"], ["#FCE4EC", "#880E4F"],
+  ["#FFD9E4", "#B71C5C"], ["#F8E8FF", "#7B1FA2"], ["#FFF4E0", "#BF360C"],
+  ["#E6F4FF", "#1565C0"], ["#FFE9F0", "#AD1457"], ["#FCE4EC", "#880E4F"]
+];
+
+// 内置兜底：原创八音盒旋律（放入自己的歌后就不播它了）
+const BARS = [
+  [[48,52,55], [[76,1],[74,1],[72,1],[74,1]]],
+  [[45,48,52], [[72,1],[69,1],[67,1],[69,1]]],
+  [[41,45,48], [[69,1],[72,1],[74,1],[72,1]]],
+  [[43,47,50], [[71,1],[74,1],[72,2]]],
+  [[48,52,55], [[76,1],[79,1],[76,1],[74,1]]],
+  [[45,48,52], [[72,1],[76,1],[72,1],[69,1]]],
+  [[41,45,48], [[74,1],[77,1],[76,1],[74,1]]],
+  [[43,47,50], [[72,2],[67,2]]]
+];
+const ARPEGGIO = [0,1,2,1,0,2,1,2];
+const BPM = 84, BEAT = 60 / BPM;
+
+const SPAWN_MS = 240;
+const MAX_CARDS = 200;
+
+const stage = document.getElementById("stage");
+const finale = document.getElementById("finale");
+const statusEl = document.getElementById("status");
+const trackEl = document.getElementById("track");
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+let runId = 0;
+
+function setStatus(text) { statusEl.textContent = text; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function randInt(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function heartCurve(n) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / n * 2 * Math.PI;
+    pts.push([
+      16 * Math.pow(Math.sin(t), 3),
+      13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)
+    ]);
+  }
+  return pts;
+}
+
+function normalize(raw, width, height, cx, cy) {
+  const xs = raw.map(p => p[0]), ys = raw.map(p => p[1]);
+  const xmin = Math.min(...xs), xmax = Math.max(...xs);
+  const ymin = Math.min(...ys), ymax = Math.max(...ys);
+  const xmid = (xmin + xmax) / 2, ymid = (ymin + ymax) / 2;
+  return raw.map(([x, y]) => [
+    cx + (x - xmid) / (xmax - xmin) * width,
+    cy - (y - ymid) / (ymax - ymin) * height
+  ]);
+}
+
+function heartPoints(n, W, H, cw, ch) {
+  const raw = heartCurve(n);
+  const xs = raw.map(p => p[0]), ys = raw.map(p => p[1]);
+  const spanX = Math.max(...xs) - Math.min(...xs);
+  const spanY = Math.max(...ys) - Math.min(...ys);
+  const unit = Math.min(W * 0.60 / spanX, H * 0.70 / spanY);
+  return normalize(raw, spanX * unit, spanY * unit, W / 2, H / 2)
+    .map(([x, y]) => [clamp(x - cw / 2, 0, W - cw), clamp(y - ch / 2, 0, H - ch)]);
+}
+
+function gridPoints(W, H, cw, ch) {
+  const cols = Math.max(3, Math.floor(W / (cw + 28)));
+  const rows = Math.max(3, Math.floor(H / (ch + 26)));
+  const cellW = W / cols, cellH = H / rows;
+  const pts = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      pts.push([
+        clamp(c * cellW + (cellW - cw) / 2 + randInt(-14, 14), 0, W - cw),
+        clamp(r * cellH + (cellH - ch) / 2 + randInt(-10, 10), 0, H - ch)
+      ]);
+    }
+  }
+  return shuffle(pts).slice(0, 150);
+}
+
+function makeCard(x, y, cw, ch, fontSize, text, bg, fg) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.style.cssText = [
+    "left:" + x + "px", "top:" + y + "px",
+    "width:" + cw + "px", "height:" + ch + "px",
+    "background:" + bg, "color:" + fg,
+    "font-size:" + fontSize + "px",
+    "--rot:" + randInt(-5, 5) + "deg"
+  ].join(";");
+  card.innerHTML = '<span class="dot">♥</span>';
+  card.appendChild(document.createTextNode(text));
+  card.addEventListener("click", stop);
+  stage.appendChild(card);
+  setTimeout(() => card.classList.add("in"), 20);
+  return card;
+}
+
+function showFinale() {
+  const pts = normalize(heartCurve(120), 280, 260, 150, 140);
+  const points = pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+  finale.innerHTML =
+    '<div class="finale-card">' +
+      '<div class="finale-head">♥ &nbsp;For You&nbsp; ♥</div>' +
+      '<div class="heart-wrap">' +
+        '<svg viewBox="0 0 300 280" xmlns="http://www.w3.org/2000/svg">' +
+          '<defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0%" stop-color="#ff91b4"/>' +
+            '<stop offset="100%" stop-color="#ff4d84"/>' +
+          '</linearGradient></defs>' +
+          '<polygon points="' + points + '" fill="url(#hg)" stroke="#ffc1d3" stroke-width="3"/>' +
+        '</svg>' +
+        '<div class="finale-text"><span>心之所向</span><span>爱之所往</span></div>' +
+      '</div>' +
+      '<div class="finale-sign">—— 写给你 ——</div>' +
+    '</div>';
+}
+
+// ---------------- BGM ----------------
+let actx = null, master = null, musicOn = true, musicLoopActive = false;
+let musicTimer = null, activeOsc = [];
+let audioEl = null, objectUrl = null;
+
+function initAudio() {
+  if (actx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  actx = new AC();
+  master = actx.createGain();
+  master.gain.value = musicOn ? 0.55 : 0;
+  master.connect(actx.destination);
+}
+
+function playNote(freq, when, dur, amp) {
+  [1, 0.32, 0.12].forEach((h, i) => {
+    const osc = actx.createOscillator(), gain = actx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq * (i + 1), when);
+    const peak = Math.max(0.0002, h * amp);
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(peak, when + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(when);
+    osc.stop(when + dur + 0.03);
+    activeOsc.push(osc);
+  });
+}
+
+function midiFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+function scheduleMusic() {
+  if (!musicLoopActive || !actx || !musicOn) return;
+  const t0 = actx.currentTime + 0.06;
+  for (let b = 0; b < BARS.length; b++) {
+    const [chord, melody] = BARS[b];
+    const base = b * 4 * BEAT;
+    for (let k = 0; k < 8; k++) {
+      playNote(midiFreq(chord[ARPEGGIO[k]]), t0 + base + k * 0.5 * BEAT,
+               0.9 * BEAT, 0.085);
+    }
+    playNote(midiFreq(chord[0] - 12), t0 + base, 1.9 * BEAT, 0.14);
+    let pos = 0;
+    for (const [m, d] of melody) {
+      playNote(midiFreq(m), t0 + base + pos * BEAT, d * 0.95 * BEAT, 0.28);
+      pos += d;
+    }
+  }
+  const total = BARS.length * 4 * BEAT;
+  musicTimer = setTimeout(scheduleMusic, (total - 0.1) * 1000);
+}
+
+function startMusic() {
+  if (!musicOn) return;
+  if (audioEl && audioEl.src) {           // 已选了本地歌曲，优先播它
+    audioEl.play().catch(() => {});
+    return;
+  }
+  initAudio();
+  if (!actx) return;
+  actx.resume().then(() => {
+    if (actx.state === "running" && musicOn && !musicLoopActive) {
+      musicLoopActive = true;
+      master.gain.setTargetAtTime(0.55, actx.currentTime, 0.05);
+      scheduleMusic();
+    }
+  }).catch(() => {});
+}
+
+function stopMusic() {
+  musicLoopActive = false;
+  clearTimeout(musicTimer);
+  musicTimer = null;
+  if (master && actx) master.gain.setTargetAtTime(0, actx.currentTime, 0.08);
+  activeOsc.forEach(osc => { try { osc.stop(); } catch (e) {} });
+  activeOsc = [];
+  if (audioEl) audioEl.pause();
+}
+
+function toggleMusic() {
+  musicOn = !musicOn;
+  document.getElementById("music").textContent = "音乐：" + (musicOn ? "开" : "关");
+  if (musicOn) startMusic(); else stopMusic();
+}
+
+function useLocalSong(file) {
+  stopMusic();
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(file);
+  if (!audioEl) {
+    audioEl = new Audio();
+    audioEl.loop = true;
+    audioEl.volume = 0.85;
+  }
+  audioEl.src = objectUrl;
+  trackEl.textContent = "BGM：" + file.name;
+  if (musicOn) {
+    audioEl.play().catch(() => setStatus("已选好歌曲，点一下页面即可播放"));
+  } else {
+    setStatus("已选好歌曲，点「音乐」开启即可播放");
+  }
+}
+
+// ---------------- 演出：不自动关闭 ----------------
+function stop() {
+  runId++;
+  stopMusic();
+  stage.innerHTML = "";
+  finale.innerHTML = "";
+  setStatus("已结束 · 点「重播」再看一次");
+}
+
+async function play() {
+  const my = ++runId;
+  const alive = () => my === runId;
+  stage.innerHTML = "";
+  finale.innerHTML = "";
+
+  const W = window.innerWidth, H = window.innerHeight;
+  const cw = Math.max(118, Math.min(172, W * 0.12));
+  const ch = Math.max(48, Math.min(64, H * 0.09));
+  const fontSize = Math.max(12, Math.min(14, Math.round(cw / 12)));
+  const pick = () => COLORS[randInt(0, COLORS.length - 1)];
+  const newCard = (x, y) => {
+    const [bg, fg] = pick();
+    makeCard(x, y, cw, ch, fontSize, TIPS[randInt(0, TIPS.length - 1)], bg, fg);
+  };
+
+  startMusic();
+  setStatus("① 爱心绽放");
+  const heart = heartPoints(110, W, H, cw, ch);
+  for (const [x, y] of heart) {
+    if (!alive()) return;
+    newCard(x, y);
+    await sleep(28);
+  }
+  await sleep(1400);
+  if (!alive()) return;
+
+  showFinale();
+  setStatus("② 持续告白中 · 不会自动关闭");
+  await sleep(700);
+  if (!alive()) return;
+
+  const pool = gridPoints(W, H, cw, ch);
+  let pi = 0, total = heart.length;
+  while (alive() && total < MAX_CARDS) {
+    if (pi >= pool.length) { shuffle(pool); pi = 0; }
+    const [px, py] = pool[pi++];
+    newCard(clamp(px + randInt(-16, 16), 0, W - cw),
+            clamp(py + randInt(-12, 12), 0, H - ch));
+    total++;
+    await sleep(SPAWN_MS);
+  }
+  if (!alive()) return;
+  setStatus("③ 已满屏 · 画面一直保持，按 Esc / 空格结束");
+}
+
+// 背景漂浮的小爱心
+for (let i = 0; i < 14; i++) {
+  const s = document.createElement("span");
+  s.className = "bg-heart";
+  s.textContent = "♥";
+  s.style.left = Math.random() * 100 + "vw";
+  s.style.fontSize = (14 + Math.random() * 24) + "px";
+  s.style.animationDuration = (9 + Math.random() * 9) + "s";
+  s.style.animationDelay = (-Math.random() * 12) + "s";
+  document.body.appendChild(s);
+}
+
+document.getElementById("replay").addEventListener("click", play);
+document.getElementById("stop").addEventListener("click", stop);
+document.getElementById("music").addEventListener("click", toggleMusic);
+document.getElementById("song").addEventListener("click",
+  () => document.getElementById("songFile").click());
+document.getElementById("songFile").addEventListener("change", e => {
+  if (e.target.files && e.target.files[0]) useLocalSong(e.target.files[0]);
+});
+finale.addEventListener("click", e => { if (e.target.closest(".finale-card")) stop(); });
+document.addEventListener("pointerdown", startMusic);
+document.addEventListener("keydown", e => {
+  startMusic();
+  if (e.key === "Escape" || e.key === " " || e.key === "Spacebar" || e.code === "Space") {
+    e.preventDefault(); stop();
+  }
+  if (e.key === "r" || e.key === "R") play();
+});
+
+// 同目录若有 bgm.mp3 就自动用作 BGM；没有就继续用内置八音盒
+function tryLocalBgm() {
+  const LOCAL_BGM = "bgm.mp3";
+  const a = new Audio();
+  a.loop = true;
+  a.volume = 0.85;
+  a.preload = "auto";
+  a.addEventListener("canplay", () => {
+    if (audioEl && audioEl.src) return;   // 用户已手动选过歌，不覆盖
+    stopMusic();                          // 停掉内置八音盒
+    audioEl = a;
+    trackEl.textContent = "BGM：" + LOCAL_BGM;
+    if (musicOn) a.play().catch(() => {});
+  }, { once: true });
+  a.addEventListener("error", () => {
+    if (audioEl === a) audioEl = null;
+  }, { once: true });
+  a.src = LOCAL_BGM;
+  a.load();
+}
+
+tryLocalBgm();
+play();
+</script>
+</body>
+</html>
